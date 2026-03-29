@@ -1,0 +1,179 @@
+# ============================================================================
+# LiveWorld Data Preparation Config
+# Edit this file to control data processing pipeline.
+# ============================================================================
+
+# === Input/Output Paths ===
+video_dirs:
+  - examples/training_data/raw/MIRA
+  - examples/training_data/raw/RealEstate10K
+  - examples/training_data/raw/SpatiaVID_HQ
+video_dirs_ratio: [1, 1]
+output_root: examples/training_data/processed
+
+# === Clip Extraction ===
+clip_num_frames: 121
+clip_extract_fps: [16]
+clip_target_fps: 16
+clip_target_width: 832
+clip_target_height: 480
+
+# Background motion filter
+bg_motion_filter: false
+bg_motion_num_samples: 16
+bg_motion_short_side: 320
+bg_motion_mask_erode: 15
+bg_motion_min_bg_ratio: 0.15
+bg_motion_threshold: 1.5
+bg_motion_max_sky_ratio: 0.4
+bg_motion_scene_cut_ratio: 3.0
+
+# === General Pipeline Behavior ===
+max_videos: 3
+shuffle_seed: 721
+fps_override: null
+naming_style: figure
+save_raw_frames: true
+save_frame_dirs: false
+skip_existing: true
+videos_only: false
+quiet_nonzero: true
+cleanup_interval: 50
+
+# === Qwen (Entity Extraction) ===
+disable_qwen: false
+qwen_model_path: ckpts/Qwen--Qwen3-VL-8B-Instruct
+qwen_prompt: null
+max_prompts: 5
+
+# === SAM3 (Segmentation) ===
+disable_sam3: false
+sam3_frame_index: 0
+sam3_propagation_direction: both
+sam3_start_frame_index: null
+sam3_max_frame_num_to_track: null
+sam3_score_threshold: null
+sam3_new_det_thresh: null
+sam3_checkpoint_path: ckpts/facebook--sam3/sam3.pt
+sam3_multi_prompt: false
+sam3_resize_input_to: null
+
+# === Geometry Estimation ===
+geometry_backend: stream3r
+
+
+# Stream3R config
+stream3r_model_path: ckpts/yslan--STream3R
+stream3r_device: cuda
+stream3r_preprocess_mode: crop
+stream3r_target_size: 518
+stream3r_window_size: 32
+stream3r_conf_threshold: 0.0
+
+# === Sample Building ===
+N_target: 65
+M_pre: 9
+min_gap_for_candidates: 2
+K_ref_stride: 2
+eps_iou: 0.04
+max_refs: 7
+scene_voxel_size: 0
+ref_iou_voxel_size: null  # null = scene_voxel_size * 10
+scene_depth_max: 100.0
+projection_channels: [rgb]
+projection_fill_kernel: 0
+num_samples: 1
+random_seed: null
+upsample_geometry_to_output: true
+projection_only: false
+reference_only: false
+instance_ref_enable: true
+instance_only: false
+instance_ref_max_instances: 5
+instance_ref_max_frames: 3
+instance_ref_random_seed: null
+
+# Foreground augmentation
+fg_dot_ratio_min: 0
+fg_dot_ratio_max: 0
+add_fg_to_projection: true
+fg_overlay_aug_enable: false
+fg_overlay_aug_blob_drop_prob: 0.7
+fg_overlay_aug_blob_count_min: 3
+fg_overlay_aug_blob_count_max: 15
+fg_overlay_aug_blob_radius_min: 5
+fg_overlay_aug_blob_radius_max: 30
+fg_overlay_aug_line_prob: 0.5
+fg_overlay_aug_line_count_min: 2
+fg_overlay_aug_line_count_max: 8
+fg_overlay_aug_line_width_min: 1
+fg_overlay_aug_line_width_max: 5
+fg_overlay_aug_block_drop_prob: 0.3
+fg_overlay_aug_block_drop_ratio_min: 0.1
+fg_overlay_aug_block_drop_ratio_max: 0.5
+
+# Source-image augmentation
+src_aug_enable: false
+src_aug_brightness_min: 0.9
+src_aug_brightness_max: 1.8
+src_aug_blur_sigma_min: 0.0
+src_aug_blur_sigma_max: 2.0
+src_aug_displacement_max: 30
+src_aug_smear_prob: 0.3
+src_aug_smear_length_min: 3
+src_aug_smear_length_max: 15
+src_aug_patch_blur_prob: 0.4
+src_aug_patch_blur_max_patches: 3
+src_aug_patch_blur_min_size: 0.05
+src_aug_patch_blur_max_size: 0.25
+src_aug_patch_blur_sigma_min: 3.0
+src_aug_patch_blur_sigma_max: 10.0
+src_aug_patch_fill_prob: 0.5
+src_aug_patch_fill_max_patches: 3
+src_aug_patch_fill_min_size: 0.03
+src_aug_patch_fill_max_size: 0.15
+src_aug_save_debug: true
+
+# Reference scene augmentation
+ref_scene_aug_prob: 0.4
+
+# === VAE Encode ===
+run_vae_encode: true
+vae_input_root: null
+vae_model_path: ckpts/Wan-AI--Wan2.1-T2V-14B
+vae_video_keys: >-
+  train_preceding_rgb_9,train_preceding_rgb_1,train_target_rgb,
+  train_reference_rgb,train_reference_scene_rgb,
+  train_reference_instance_00,train_reference_instance_01,train_reference_instance_02,
+  train_reference_instance_03,train_reference_instance_04,
+  train_preceding_scene_proj_rgb_9,train_preceding_scene_proj_rgb_1,
+  train_target_scene_proj_rgb,train_target_scene_proj_rgb_orig,
+  train_reference_scene_rgb_orig,
+  train_preceding_proj_fg_rgb_9,
+  train_preceding_proj_fg_rgb_1,train_target_proj_fg_rgb,
+  train_preceding_scene_proj_fg_overlay_rgb_9,
+  train_preceding_scene_proj_fg_overlay_rgb_1,
+  train_target_scene_proj_fg_overlay_rgb
+vae_skip_existing: true
+vae_quiet_nonzero: true
+vae_delete_old_pt: true
+vae_max_videos: null
+encode_target_width: 832
+encode_target_height: 480
+
+# === Captioning ===
+caption_input_root: null
+caption_video_keys: train_target_scene_rgb,train_target_fg_rgb,train_target_rgb
+caption_model_path: ckpts/Qwen--Qwen3-VL-8B-Instruct
+caption_max_new_tokens: 128
+caption_prompt: null
+caption_attn_implementation: flash_attention_2
+caption_skip_existing: true
+caption_quiet_nonzero: true
+caption_max_videos: null
+
+# === LMDB ===
+lmdb_data_root: null
+lmdb_target_shard_size_gb: 30.0
+lmdb_num_workers: 0
+lmdb_force_cache: true

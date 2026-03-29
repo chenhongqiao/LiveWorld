@@ -1,0 +1,26 @@
+# IDE / Claude
+.claude/
+.vscode/
+
+# Build artifacts
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Internal / not for release
+ECCV2026_Zicheng (1)/
+prepare_for_open_source/
+tools/
+system_check/
+
+# Data & checkpoints (too large for git)
+ckpts/
+data/
+outputs/
+experiments/
+*.pt
+*.safetensors
+*.ply
+*.lmdb
+examples/training_data/processed/*.npz
+examples/training_data
