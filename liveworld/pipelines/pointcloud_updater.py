@@ -1521,24 +1521,32 @@ class Stream3RUpdater(PointCloudUpdater):
                 total_new_pts += len(frame_pts)
 
         # Outlier removal on newly added points only
+
         if running_points is None or len(running_points) == 0:
+
             return None, None
 
         n_state = len(state_points) if state_points is not None else 0
         n_new = len(running_points) - n_state
+
         if n_new > 0 and n_state > 0:
+
             new_pcd = o3d.geometry.PointCloud()
             new_pcd.points = o3d.utility.Vector3dVector(running_points[n_state:])
             new_pcd.colors = o3d.utility.Vector3dVector(running_colors[n_state:].astype(np.float64) / 255.0)
+
             if len(new_pcd.points) > 20:
+
                 new_pcd, _ = new_pcd.remove_statistical_outlier(
                     nb_neighbors=int(options.stream3r_outlier_nb_neighbors),
                     std_ratio=float(options.stream3r_outlier_std_ratio),
                 )
+
             new_pts_clean = np.asarray(new_pcd.points).astype(np.float32)
             new_cols_clean = (np.asarray(new_pcd.colors) * 255).clip(0, 255).astype(np.uint8)
             running_points = np.concatenate([running_points[:n_state], new_pts_clean], axis=0)
             running_colors = np.concatenate([running_colors[:n_state], new_cols_clean], axis=0)
+
 
         new_points = running_points.astype(np.float32)
         new_colors = running_colors
@@ -1546,6 +1554,7 @@ class Stream3RUpdater(PointCloudUpdater):
         # Sync internal state
         self._points_world = new_points
         self._colors = new_colors
+
 
         return new_points, new_colors
 
