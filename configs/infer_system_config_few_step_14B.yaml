@@ -12,6 +12,12 @@ observer:
   fps: 16
   infer_steps: 4                                # 4-step denoising
   guidance_scale: null                          # CFG-free (distilled)
+  timestep_shift: 8.0                          # Few-step uses shift=8 (vs full-step 5.0)
+  denoising_step_list:
+    - 1000
+    - 750
+    - 500
+    - 250
   max_preceding_frames: 10
   max_reference_frames: 10
   ref_discard_black_ratio: 0.1

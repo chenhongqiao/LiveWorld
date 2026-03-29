@@ -264,6 +264,13 @@ def load_unified_backbone_pipeline(
 
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
+    # Forward observer-level overrides that the pipeline reads from config.
+    # These let the system config (e.g. few-step) override train-config defaults.
+    _OBSERVER_TO_TRAIN_CONFIG_KEYS = ["denoising_step_list", "timestep_shift"]
+    for key in _OBSERVER_TO_TRAIN_CONFIG_KEYS:
+        if key in observer_cfg:
+            OmegaConf.update(train_config, key, observer_cfg[key])
+
     # Support split observer checkpoints:
     # - backbone_path: backbone-only weights (assigned to train_config generator_backbone_ckpt_path)
     # - lora_path: LoRA checkpoint used to populate PEFT adapters
