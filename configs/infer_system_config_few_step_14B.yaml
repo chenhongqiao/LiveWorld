@@ -6,7 +6,7 @@ runtime:
 observer:
   config: configs/train_liveworld_14B.yaml
   backbone_path: ckpts/Wan2.1-T2V-14B-StepDistill/distill_model.pt  # Distilled backbone
-  lora_path: ckpts/lora_few_step/model.pt      # Few-step distilled LoRA
+  lora_path: ckpts/lora/model.pt                # Same lora as full-step
   sp_path: ckpts/state_adapter/model.pt         # Same State Adapter as full-step
   frames_per_iter: 65
   fps: 16
