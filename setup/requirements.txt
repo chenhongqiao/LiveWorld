@@ -114,3 +114,5 @@ wheel
 zipp
 zstandard
 peft
+open3d==0.18.0
+flash_attn==2.8.3 --no-build-isolation

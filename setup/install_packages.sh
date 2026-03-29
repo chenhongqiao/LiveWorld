@@ -3,7 +3,7 @@
 set -e
 
 echo "Installing LiveWorld..."
-pip install -e .
+pip install -e setup/
 
 echo "Installing SAM3..."
 pip install -e misc/sam3
