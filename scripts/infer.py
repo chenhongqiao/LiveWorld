@@ -95,7 +95,7 @@ def _run_batch(config_paths: list[str], output_root: str, device: str | None, en
 
         print(f"\n[batch] ({idx + 1}/{total}) {label}")
 
-        config = _prepare_config(cfg_path, output_root, device)
+        config = _prepare_config(cfg_path, output_root, device, system_config)
         _inject_entity_names(config, entity_names_str)
         set_seed(config["runtime"]["seed"])
 
