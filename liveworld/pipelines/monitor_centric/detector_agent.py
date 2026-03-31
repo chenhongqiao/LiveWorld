@@ -118,49 +118,31 @@ def _crop_entity_on_black_square(
     return black_square, (x1, y1, x2, y2), black_square_mask
 
 
-_DYNAMIC_FILTER_PROMPT = """\
-Given this image and these detected objects: {entities}
+_ENTITY_DETECT_PROMPT = """\
+List all LIVING BEINGS and VEHICLES visible in this image.
 
-Which of these can move ON THEIR OWN? (people, animals, birds, vehicles, robots, etc.)
+INCLUDE (even if stationary, sitting, resting, or parked):
+- People (any human, including hands/arms/feet)
+- Animals (dog, cat, bird, horse, etc.)
+- Vehicles (car, truck, bus, motorcycle, bicycle, scooter, etc.)
 
-STATIC (exclude): furniture, appliances, fixtures, radiators, doors, windows, \
-lamps, plants, decorations, buildings, structures, signs, sky, water.
+EXCLUDE: furniture, appliances, fixtures, lamps, plants, decorations, \
+buildings, structures, signs, sky, water, food, drinks, bags, boxes, \
+and all other non-living/non-vehicle objects.
 
-List ONLY the dynamic/movable ones. If none can move, output exactly: Nothing
+RULES:
+1. Output CATEGORIES, not individual instances
+2. Use AT MOST 4 categories total
+3. For any human, ALWAYS write exactly: person
+4. Include them even if they are NOT moving — what matters is whether \
+they are a living creature or a vehicle
+5. Keep items short (1-3 words)
 
-Output format:
+OUTPUT FORMAT:
 Nothing
 OR numbered list:
 1) person
 2) dog"""
-
-
-def filter_static_entities(
-    qwen_model: Qwen3VLEntityExtractor,
-    image_path: str,
-    entity_names: List[str],
-) -> List[str]:
-    """Filter out static entities, keeping only ones that can move on their own.
-
-    Args:
-        qwen_model: Qwen model for image understanding.
-        image_path: Path to the image.
-        entity_names: Detected entity names to filter.
-
-    Returns:
-        Filtered list of dynamic entity names.
-    """
-    if not entity_names:
-        return []
-
-    prompt = _DYNAMIC_FILTER_PROMPT.format(entities=", ".join(entity_names))
-    raw = qwen_model.generate_text(image_path, prompt)
-    filtered = parse_entities(raw)
-
-    # Keep only entities that appear in the original list (case-insensitive).
-    original_lower = {e.strip().lower() for e in entity_names}
-    result = [e for e in filtered if e.strip().lower() in original_lower]
-    return result
 
 
 class DetectorAgent:
@@ -231,15 +213,9 @@ class DetectorAgent:
             # Skip Qwen: use preset entities directly.
             entity_names = list(preset_entity_names)
         else:
-            # 1. Detect entity names using Qwen.
+            # Detect living beings / vehicles using a single Qwen call.
             with _offload_scope(self.qwen_model, self.cpu_offload_qwen, self.device):
-                entity_names, _raw = self.qwen_model.extract(frame_path, prompt=self.detect_prompt)
-
-                # 1.5. Filter out static entities (keep Qwen on GPU for the second call).
-                if entity_names:
-                    entity_names = filter_static_entities(
-                        self.qwen_model, frame_path, entity_names
-                    )
+                entity_names, _raw = self.qwen_model.extract(frame_path, prompt=_ENTITY_DETECT_PROMPT)
 
         if not entity_names:
             return []

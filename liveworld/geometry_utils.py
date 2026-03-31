@@ -1585,7 +1585,7 @@ def _compute_projection_density_max_pixels(
     for frame_idx in target_frames:
         pose_idx = _safe_frame_index(frame_idx, len(poses_c2w))
         intr_idx = _safe_frame_index(frame_idx, len(intrinsics))
-        K_scaled = scale_intrinsics_from_size(intrinsics[intr_idx], (proc_h, proc_w), (height, width))
+        K_scaled = scale_intrinsics(intrinsics[intr_idx], (proc_h, proc_w), (height, width))
         idx, u, v, _ = _project_points_to_pixels(points_world, poses_c2w[pose_idx], K_scaled, (height, width))
         if idx.size == 0:
             continue

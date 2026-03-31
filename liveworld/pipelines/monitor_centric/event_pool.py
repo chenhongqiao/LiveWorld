@@ -17,7 +17,7 @@ import numpy as np
 import torch
 
 from .event_agent import EventAgent, EventPrompts
-from .event_types import EventObservation, EventState, EventID
+from .event_types import EventObservation, EventState, EventID, make_event_id
 from .entity_matcher import EntityMatcher
 from .logger import logger
 
@@ -386,10 +386,14 @@ class EventPool:
         observation: EventObservation,
         debug_dir: Optional[str] = None,
     ) -> Optional[EventAgent]:
-        """Register or reuse a scene-level event from one observation frame.
+        """Register or reuse events from one observation frame (instance-level).
 
-        Reuse rule: if any detected instance has DINOv3 similarity above
-        threshold with any instance in an existing scene, reuse that scene.
+        Each detected instance is independently matched against existing events.
+        Matched instances are merged into their best-matching event; unmatched
+        instances are grouped together into a new event.
+
+        Returns the first agent that was created or updated (for backward compat),
+        or None if nothing was registered.
         """
         if observation.frame is None:
             raise ValueError("observation.frame (full scene) must be provided for I2V anchor")
@@ -411,77 +415,74 @@ class EventPool:
             )
             debug_path = Path(debug_dir) if debug_dir else None
             logger.info(
-                f"  Scene matching: {len(detections)} detections, "
+                f"  Instance matching: {len(detections)} detections, "
                 f"{len(obs_embeddings)} embeddings, "
                 f"entities={entities}"
             )
 
             active_agents = self.list_active()
-            logger.info(f"  Comparing against {len(active_agents)} active scene(s)")
+            logger.info(f"  Comparing against {len(active_agents)} active event(s)")
 
-            best_agent: Optional[EventAgent] = None
-            best_score = -1.0
-            best_entity_sim = 0.0
-            best_compared_sim = 0.0
-            best_compared_scene_id: Optional[str] = None
             entity_thr = self.config.scene_entity_similarity_threshold
+
+            # Per-instance matching: for each obs instance, find best matching event.
+            # matched_instances[i] = (agent, best_sim) or None
+            matched_instances: List[Optional[Tuple[EventAgent, float]]] = [
+                None for _ in range(len(obs_embeddings))
+            ]
 
             for agent in active_agents:
                 state = agent.state
-                avg_sim, max_pair_sim, best_pair = self._scene_embedding_similarity(
-                    obs_embeddings=obs_embeddings,
-                    ref_embeddings=state.scene_entity_embeddings or [],
-                    matcher=matcher,
-                    log_label=f"vs {agent.event_id[:12]}",
-                )
-                if best_pair is not None:
-                    obs_idx, ref_idx = best_pair
-                    ref_crops = state.scene_entity_crops or []
-                    ref_masks = state.scene_entity_masks or []
-                    if (
-                        obs_idx >= len(obs_crops)
-                        or obs_idx >= len(obs_masks)
-                        or ref_idx >= len(ref_crops)
-                        or ref_idx >= len(ref_masks)
-                    ):
-                        raise RuntimeError(
-                            "Scene-match debug data is incomplete: "
-                            f"obs_idx={obs_idx}, n_obs={len(obs_crops)}, "
-                            f"ref_idx={ref_idx}, n_ref={len(ref_crops)}. "
-                            "Expected cropped RGB/mask pairs for all compared embeddings."
-                        )
-                    self._save_match_debug_pair(
-                        debug_dir=debug_path,
-                        compared_event_id=agent.event_id,
-                        max_pair_sim=max_pair_sim,
-                        obs_idx=obs_idx,
-                        ref_idx=ref_idx,
-                        obs_rgb=obs_crops[obs_idx],
-                        obs_mask=obs_masks[obs_idx],
-                        ref_rgb=ref_crops[ref_idx],
-                        ref_mask=ref_masks[ref_idx],
+                ref_embeddings = state.scene_entity_embeddings or []
+                if not ref_embeddings or matcher is None:
+                    continue
+
+                # Compute similarity of each obs instance against this event's instances.
+                for i, emb_obs in enumerate(obs_embeddings):
+                    best_sim_for_i = 0.0
+                    for emb_ref in ref_embeddings:
+                        sim = matcher.compute_similarity(emb_obs, emb_ref)
+                        best_sim_for_i = max(best_sim_for_i, sim)
+
+                    if best_sim_for_i >= entity_thr:
+                        prev = matched_instances[i]
+                        if prev is None or best_sim_for_i > prev[1]:
+                            matched_instances[i] = (agent, best_sim_for_i)
+
+                    logger.info(
+                        f"    '{obs_labels[i]}' vs {agent.event_id[:12]}: "
+                        f"best_sim={best_sim_for_i:.3f} "
+                        f"(thr={entity_thr:.3f}) -> "
+                        f"{'MATCH' if best_sim_for_i >= entity_thr else 'no match'}"
                     )
 
-                # Reuse if ANY instance pair exceeds the threshold.
-                matched = max_pair_sim >= entity_thr
-                if max_pair_sim > best_compared_sim:
-                    best_compared_sim = max_pair_sim
-                    best_compared_scene_id = agent.event_id
+            # Group matched instances by their target agent.
+            agent_to_indices: Dict[str, List[int]] = {}
+            unmatched_indices: List[int] = []
+            for i, match in enumerate(matched_instances):
+                if match is not None:
+                    agent, sim = match
+                    agent_to_indices.setdefault(agent.event_id, []).append(i)
+                else:
+                    unmatched_indices.append(i)
 
-                logger.info(
-                    f"  vs {agent.event_id[:12]}: "
-                    f"avg_sim={avg_sim:.3f}, max_pair_sim={max_pair_sim:.3f} "
-                    f"(thr={entity_thr:.3f}) -> {'MATCH' if matched else 'no match'}"
+            first_result: Optional[EventAgent] = None
+
+            # Merge matched instances into their respective events.
+            for eid, indices in agent_to_indices.items():
+                agent = self._agents[eid]
+                state = agent.state
+                matched_entities = self._normalize_entities(
+                    [obs_labels[i] for i in indices]
                 )
+                matched_embs = [obs_embeddings[i] for i in indices]
+                matched_crops = [obs_crops[i] for i in indices]
+                matched_masks = [obs_masks[i] for i in indices]
+                matched_labels = [obs_labels[i] for i in indices]
 
-                if matched and max_pair_sim > best_score:
-                    best_score = max_pair_sim
-                    best_agent = agent
-                    best_entity_sim = max_pair_sim
-
-            if best_agent is not None:
-                state = best_agent.state
-                state.entities = self._normalize_entities((state.entities or []) + entities)
+                state.entities = self._normalize_entities(
+                    (state.entities or []) + matched_entities
+                )
                 (
                     state.scene_entity_embeddings,
                     state.scene_entity_crops,
@@ -492,66 +493,79 @@ class EventPool:
                     old_crops=state.scene_entity_crops or [],
                     old_masks=state.scene_entity_masks or [],
                     old_labels=state.scene_entity_labels or [],
-                    new_embeddings=obs_embeddings,
-                    new_crops=obs_crops,
-                    new_masks=obs_masks,
-                    new_labels=obs_labels,
+                    new_embeddings=matched_embs,
+                    new_crops=matched_crops,
+                    new_masks=matched_masks,
+                    new_labels=matched_labels,
                     matcher=matcher,
                 )
                 if state.entity_embedding is None and state.scene_entity_embeddings:
                     state.entity_embedding = state.scene_entity_embeddings[0]
+                sims = [matched_instances[i][1] for i in indices]
                 logger.info(
-                    f"Reuse scene event {best_agent.event_id} "
-                    f"(max_instance_sim={best_entity_sim:.3f}, thr={entity_thr:.3f})"
+                    f"  Reuse event {eid[:12]} <- {matched_entities} "
+                    f"(sims={[f'{s:.3f}' for s in sims]})"
                 )
-                return best_agent
+                if first_result is None:
+                    first_result = agent
 
-            # No matching scene found: create a new one if capacity allows.
-            if len(self._agents) >= self.config.max_events:
-                logger.warning(
-                    "Scene event capacity reached; skip creating new scene "
-                    f"for entities: {', '.join(entities)} "
-                    f"(max_instance_sim={best_compared_sim:.3f}, "
-                    f"closest_scene={best_compared_scene_id or 'n/a'}, thr={entity_thr:.3f})"
+            # Create new event for unmatched instances.
+            if unmatched_indices:
+                new_entities = self._normalize_entities(
+                    [obs_labels[i] for i in unmatched_indices]
                 )
-                return None
+                if not new_entities:
+                    new_entities = self._normalize_entities(
+                        [entities[i] for i in unmatched_indices if i < len(entities)]
+                    ) or entities
+                new_embs = [obs_embeddings[i] for i in unmatched_indices]
+                new_crops = [obs_crops[i] for i in unmatched_indices]
+                new_masks = [obs_masks[i] for i in unmatched_indices]
+                new_labels = [obs_labels[i] for i in unmatched_indices]
 
-            event_id = observation.event_id
-            if event_id in self._agents:
-                logger.info(f"Reuse existing event id {event_id} (already registered)")
-                return self._agents[event_id]
-            state = EventState(
-                status="active",
-                anchor_pose_c2w=observation.pose_c2w,
-                entities=entities,
-                current_anchor_frame=observation.frame,
-                entity_embedding=obs_embeddings[0] if obs_embeddings else None,
-                scene_entity_embeddings=obs_embeddings,
-                scene_entity_crops=obs_crops,
-                scene_entity_masks=obs_masks,
-                scene_entity_labels=obs_labels,
-            )
-            agent = EventAgent(
-                event_id=event_id,
-                state=state,
-                device=self.device,
-                prompts=self.prompts,
-                default_horizon=self.default_horizon,
-                default_fps=self.default_fps,
-            )
-            self._agents[event_id] = agent
-            if active_agents:
-                logger.info(
-                    f"Register new scene event {event_id} with entities: {', '.join(entities)} "
-                    f"(max_instance_sim={best_compared_sim:.3f}, "
-                    f"closest_scene={best_compared_scene_id or 'n/a'}, thr={entity_thr:.3f})"
-                )
-            else:
-                logger.info(
-                    f"Register new scene event {event_id} with entities: {', '.join(entities)} "
-                    f"(max_instance_sim=n/a, closest_scene=n/a, thr={entity_thr:.3f}; first event)"
-                )
-            return agent
+                if len(self._agents) >= self.config.max_events:
+                    logger.warning(
+                        f"  Event capacity reached; skip new event for: "
+                        f"{', '.join(new_entities)}"
+                    )
+                else:
+                    # Use caller-provided event_id when all instances are unmatched
+                    # (first registration); generate new id for partial unmatched.
+                    if not agent_to_indices:
+                        event_id = observation.event_id
+                    else:
+                        event_id = make_event_id(new_entities, observation.pose_c2w)
+                    if event_id in self._agents:
+                        logger.info(f"  Reuse existing event id {event_id[:12]} (already registered)")
+                        agent = self._agents[event_id]
+                    else:
+                        state = EventState(
+                            status="active",
+                            anchor_pose_c2w=observation.pose_c2w,
+                            entities=new_entities,
+                            current_anchor_frame=observation.frame,
+                            entity_embedding=new_embs[0] if new_embs else None,
+                            scene_entity_embeddings=new_embs,
+                            scene_entity_crops=new_crops,
+                            scene_entity_masks=new_masks,
+                            scene_entity_labels=new_labels,
+                        )
+                        agent = EventAgent(
+                            event_id=event_id,
+                            state=state,
+                            device=self.device,
+                            prompts=self.prompts,
+                            default_horizon=self.default_horizon,
+                            default_fps=self.default_fps,
+                        )
+                        self._agents[event_id] = agent
+                        logger.info(
+                            f"  Register new event {event_id[:12]} <- {new_entities}"
+                        )
+                    if first_result is None:
+                        first_result = agent
+
+            return first_result
         finally:
             if self.cpu_offload_dinov3 and matcher is not None:
                 matcher.offload_to_cpu()

@@ -825,7 +825,7 @@ class MonitorCentricEvolutionPipeline:
                         state_points=current_points,
                         state_colors=current_colors,
                         options=self._backbone_options,
-                        rgb_frames=rgb_array,
+                        rgb_frames=frames_array,
                         extra_entity_prompts=_active_entity_prompts or None,
                     )
 
