@@ -8,7 +8,7 @@ observer:
   backbone_path: null
   lora_path: ckpts/lora/model.pt      # Download from HuggingFace
   sp_path: ckpts/state_adapter/model.pt      # Download from HuggingFace
-  frames_per_iter: 65
+  frames_per_iter: 61   # 15 motion-latents × 4 + 1 = 61, matches HYWP / Lyra-2 / lingbot (chunk_size=4)
   fps: 16
   infer_steps: 50
   guidance_scale: 7
