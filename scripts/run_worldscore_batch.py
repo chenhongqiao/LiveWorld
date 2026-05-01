@@ -45,7 +45,8 @@ import yaml
 # Per-frame motion magnitudes. forward_speed is exposed as a CLI knob in
 # m/latent units (so the canonical HYWP value is 0.08); we divide by
 # FRAMES_PER_LATENT to get per-frame increments. Yaw/pitch are constant.
-HYWP_FORWARD_SPEED = 0.08
+HYWP_FORWARD_SPEED = 0.08         # canonical reference value
+DEFAULT_FORWARD_SPEED = 0.025      # slow-camera default for our baselines
 YAW_SPEED = np.deg2rad(0.75)
 PITCH_SPEED = np.deg2rad(0.75)
 FRAMES_PER_LATENT = 4
@@ -177,10 +178,10 @@ def main() -> None:
     ap.add_argument("--trajs", default="",
                     help="Space-separated trajectory name filter.")
     ap.add_argument("--forward-speed", "--forward_speed", type=float,
-                    dest="forward_speed", default=HYWP_FORWARD_SPEED,
+                    dest="forward_speed", default=DEFAULT_FORWARD_SPEED,
                     help=f"Translational speed in m/latent (default "
-                         f"{HYWP_FORWARD_SPEED} = HYWP). Halve to 0.04 for slow "
-                         f"cameras; yaw/pitch unaffected.")
+                         f"{DEFAULT_FORWARD_SPEED}; HYWP standard is "
+                         f"{HYWP_FORWARD_SPEED}). Yaw/pitch unaffected.")
     ap.add_argument("--frames-per-iter", type=int, default=61,
                     help="Frames per LiveWorld iteration. 15 latents → 61. "
                          "Override for different pose-string lengths.")
